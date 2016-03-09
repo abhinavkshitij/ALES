@@ -12,3 +12,4 @@ Changes in the branch in test2
 going to stash before checkout
 some changes from test2 on branch test1
 
+Try SSH

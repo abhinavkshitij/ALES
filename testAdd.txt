@@ -13,3 +13,5 @@ going to stash before checkout
 some changes from test2 on branch test1
 
 adding new branch dev/local
+[dev/local1 ccad10d] added new entry in testAdd.txt
+ 1 file changed, 1 insertion(+)

@@ -3,12 +3,13 @@ program testSVD
 use omp_lib
 
 implicit none
-integer, parameter :: M=1757, N=340, P=6  ! Define array size here.
+integer, parameter :: M=17576, N=3403, P=6  ! Define array size here.
 
 real(8),allocatable,dimension(:,:):: V,T,h_ij      ! Non-linear combination matrix
 real(8) :: lam = 0.1d0         ! lambda, damping factor
 real(8) :: random
-integer :: i,j
+real(8) :: tic, toc
+integer :: i,j,nthread
 logical :: printval=.false.
 logical :: randomV = .true.
 
@@ -21,13 +22,13 @@ if (M.lt.N) then
    stop
 end if
 
-!$ call omp_set_num_threads(2)
-
+!$ call omp_set_num_threads(8)
 ! INITIALIZE ARRAY:
 if (randomV) then
 ! CREATE A PSEUDO-RANDOM MATRIX:
-
+call cpu_time(tic)
    call init_random_seed()
+!$omp parallel do
    do j = 1,N
    do i = 1,M
       call random_number(random)
@@ -36,10 +37,12 @@ if (randomV) then
    call random_number(random)
    T(j,:) = random              !Copies the first column over to all six columns
    end do
+call cpu_time(toc)
+print*, 'Elapsed time:', toc-tic,'s'
 else
 
 ! CREATE A USER-DEFINED MATRIX:
-!$omp parallel do
+
    do j = 1,N
    do i = 1,M
       V(i,j) =  i**2 + 2*j
@@ -108,9 +111,12 @@ end if
 LWORK = -1
 call dgesvd('All','All', M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, info)
 LWORK = min( LWMAX, int(WORK(1)) ) 
-!!$omp parallel
+!$omp parallel
+!$omp critical
 call dgesvd('All','All',M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, info)
-!!$omp end parallel
+!$omp end critical
+!$omp end parallel
+
 
 ! Convergence check:
 if (info.gt.0) then

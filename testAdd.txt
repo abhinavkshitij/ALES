@@ -13,3 +13,5 @@ going to stash before checkout
 some changes from test2 on branch test1
 Adding file gitadd_remote.txt on local
 
+adding extra change here in master before file-specific merge
+More changes before file-specific merge

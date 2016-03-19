@@ -6,7 +6,7 @@ implicit none
 integer, parameter :: M=5, N=3, P=2  ! Define array size here.
 
 real(8),allocatable,dimension(:,:):: V,T,h_ij      ! Non-linear combination matrix
-real(8) :: lam = 0.1d0         ! lambda, damping factor
+real(8) :: lambda = 0.1d0         ! lambda, damping factor
 real(8) :: random
 real(8) :: tic, toc
 integer :: i,j,nthread
@@ -52,24 +52,29 @@ else
 end if
 
 
+print*,'V:'
+call printmatrix(V,size(V,dim=1))
+print*,'T:'
+call printmatrix(T,size(T,dim=1))
+
+
+! SVD DECOMPOSITION:
+if (M.gt.8.or.N.gt.8)  printval=.false. !suppress printing large matrices
+
+call SVD(V,T,h_ij,printval)
 
 print*,'V:'
 call printmatrix(V,size(V,dim=1))
 print*,'T:'
 call printmatrix(T,size(T,dim=1))
 
-! SVD DECOMPOSITION:
-if (M.gt.8.or.N.gt.8)  printval=.false. !suppress printing large matrices
-call SVD(V,T,h_ij,printval)
-
-
 ! PRINT h_ij:
-   print*,'h_ij:'
-if (printval) then
-   print*, h_ij
-else
-      call printmatrix(h_ij,size(h_ij,dim=1))
-end if
+print*,'h_ij:'
+call printmatrix(h_ij,size(h_ij,dim=1))
+
+
+
+
 
 contains
 
@@ -139,7 +144,7 @@ end if
 
 ! COMPUTE PSEUDOINVERSE:
 D = 0.d0
-forall(i=1:N) D(i,i) = S(i) / (S(i)**2 + lam**2)
+forall(i=1:N) D(i,i) = S(i) / (S(i)**2 + lambda**2)
 Vinv = matmul(matmul(transpose(VT),D),transpose(U))
 
 if(printval) then
@@ -154,6 +159,9 @@ end if
 h_ij = matmul(Vinv,T)
 return
 end subroutine SVD
+
+
+
 
 
 ! SUBROUTINE INIT_RANDOM_SEED: RANDOM NUMBER GENERATION 
@@ -183,7 +191,7 @@ integer :: i,j
 
 if (LDA.gt.8) LDA=8
 do i=1,LDA
-   print*, A(i,1:4)
+   print*, A(i,1:size(A,dim=2))
 end do
 
 return

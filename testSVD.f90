@@ -3,7 +3,7 @@ program testSVD
 use omp_lib
 
 implicit none
-integer, parameter :: M=17576, N=3403, P=6  ! Define array size here.
+integer, parameter :: M=5, N=3, P=2  ! Define array size here.
 
 real(8),allocatable,dimension(:,:):: V,T,h_ij      ! Non-linear combination matrix
 real(8) :: lam = 0.1d0         ! lambda, damping factor
@@ -11,11 +11,11 @@ real(8) :: random
 real(8) :: tic, toc
 integer :: i,j,nthread
 logical :: printval=.false.
-logical :: randomV = .true.
+logical :: randomV =.false.
 
 
 allocate (V(M,N), T(M,P), h_ij(N,P))
-
+V=0.;T=0.;h_ij=0.
 ! ASSERT (M>N)
 if (M.lt.N) then
    print*, "SVD computation needs M >= N "

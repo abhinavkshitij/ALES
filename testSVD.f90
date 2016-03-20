@@ -43,9 +43,11 @@ call cpu_time(tic)              !### START TIMING
       V(i,j) =  random
    end do
    end do
+   do j=1,P
    do i=1,M
       call random_number(random)
-      T(i,:) = random              !Copies the first column over to all six columns
+      T(i,j) = random              !Copies the first column over to all six columns
+   end do
    end do
    call cpu_time(toc)           !### STOP TIMING
    print*, 'Elapsed time:', toc-tic,'s'
@@ -205,8 +207,8 @@ subroutine LU(V, T_ij, h_ij, lambda)
  ! DGESV ARGUMENTS:
   integer, parameter        :: LDA = N, LDB = N, nrhs = P
   real(8), dimension(:,:),allocatable :: A,VT, eye ! EYE - IDENTITY MATRIX
-  real(8), dimension(:,:),allocatable   :: b
-  integer, dimension(:), allocatable     :: ipiv
+  real(8), dimension(:,:),allocatable :: b
+  integer, dimension(:), allocatable  :: ipiv
   integer                   :: info
   real(8) :: tic, toc
   integer :: i

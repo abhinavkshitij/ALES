@@ -17,6 +17,7 @@ logical :: randomV =.true.
 character(3) :: solver = 'lud' 
 
 
+
 !$ call omp_set_num_threads(8)
 
 
@@ -33,9 +34,9 @@ end if
 !
 if (randomV) then
 ! PSEUDO-RANDOM MATRIX:
-call cpu_time(tic)
-   call init_random_seed()
-!$omp parallel do
+call cpu_time(tic)              !### START TIMING
+   call init_random_seed()      
+   !$omp parallel do
    do j = 1,N
    do i = 1,M
       call random_number(random)
@@ -46,7 +47,7 @@ call cpu_time(tic)
       call random_number(random)
       T(i,:) = random              !Copies the first column over to all six columns
    end do
-   call cpu_time(toc)
+   call cpu_time(toc)           !### STOP TIMING
    print*, 'Elapsed time:', toc-tic,'s'
 else 
 ! USER-DEFINED MATRIX:
@@ -115,6 +116,7 @@ real(8),dimension(:,:),allocatable :: VT
 real(8),dimension(:,:),allocatable :: D, Vinv
 real(8),dimension(:), allocatable :: S, work
 
+real(8) :: tic,toc
 logical :: printval
 character(1) :: N_char 
 
@@ -134,10 +136,12 @@ call dgesvd('All','All', M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, info)
 LWORK = min( LWMAX, int(WORK(1)) ) 
 !$omp parallel
 !$omp critical
+call cpu_time(tic)
 call dgesvd('All','All',M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, info)
+call cpu_time(toc)
 !$omp end critical
 !$omp end parallel
-
+print*,'Elapsed time:',toc-tic
 
 ! Convergence check:
 if (info.gt.0) then
@@ -161,7 +165,10 @@ end if
 ! COMPUTE PSEUDOINVERSE:
 D = 0.d0
 forall(i=1:N) D(i,i) = S(i) / (S(i)**2 + lambda**2)
+call cpu_time(tic)
 Vinv = matmul(matmul(transpose(VT),D),transpose(U))
+call cpu_time(toc)
+print*,"Elapsed time:",toc-tic
 
 if(printval) then
 print*,'D'                     ! D MATRIX - DIAG MATRIX
@@ -204,13 +211,18 @@ subroutine LU(V, T_ij, h_ij, lambda)
   real(8) :: tic, toc
   integer :: i
  
-  allocate (A(N,N), eye(N,N), b(N,nrhs),ipiv(N),VT(N,M))
- A=0.d0;eye=0.d0;b=0.d0
+  allocate (A(N,N), eye(N,N), b(N,P), ipiv(N), VT(N,M))
+  A=0.d0;eye=0.d0;b=0.d0
 
  forall(i = 1:N) eye(i,i) = 1.d0 ! Identity matrix
  ! Use the SAVE attribute or something to avoid repeated construction.
- 
+
+call cpu_time(tic)
  A = matmul(transpose(V),V) +  (lambda * eye) !Bottleneck
+call cpu_time(toc)
+print*,'Elapsed time', toc-tic
+
+
  print*,'A:'
  call printmatrix(A,size(A,dim=1)) 
 

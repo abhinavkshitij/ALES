@@ -3,46 +3,56 @@ program testSVD
 use omp_lib
 
 implicit none
-integer, parameter :: M=17576, N=3403, P=6  ! Define array size here.
+!integer, parameter :: M=5, N=3, P=2  ! Define array size here.
+integer,parameter :: M=17576, N=3403, P=6
 
 real(8),allocatable,dimension(:,:):: V,T,h_ij      ! Non-linear combination matrix
-real(8) :: lam = 0.1d0         ! lambda, damping factor
+real(8) :: lambda = 0.1d0         ! lambda, damping factor
 real(8) :: random
 real(8) :: tic, toc
 integer :: i,j,nthread
 logical :: printval=.false.
-logical :: randomV = .true.
+logical :: randomV =.true.
+
+character(3) :: solver = 'lud' 
 
 
-allocate (V(M,N), T(M,P), h_ij(N,P))
-
-! ASSERT (M>N)
-if (M.lt.N) then
-   print*, "SVD computation needs M >= N "
-   stop
-end if
 
 !$ call omp_set_num_threads(8)
+
+
+! ASSERT (M >= N) BEFORE ALLOCATION:
+if (M.lt.N) then
+   print*, "Error: M < N ...  Need square or over-determined system"
+   stop
+else
+   allocate (V(M,N), T(M,P), h_ij(N,P))
+end if
+
+!
 ! INITIALIZE ARRAY:
+!
 if (randomV) then
-! CREATE A PSEUDO-RANDOM MATRIX:
-call cpu_time(tic)
-   call init_random_seed()
-!$omp parallel do
+! PSEUDO-RANDOM MATRIX:
+call cpu_time(tic)              !### START TIMING
+   call init_random_seed()      
+   !$omp parallel do
    do j = 1,N
    do i = 1,M
       call random_number(random)
       V(i,j) =  random
    end do
-   call random_number(random)
-   T(j,:) = random              !Copies the first column over to all six columns
    end do
-call cpu_time(toc)
-print*, 'Elapsed time:', toc-tic,'s'
-else
-
-! CREATE A USER-DEFINED MATRIX:
-
+   do j=1,P
+   do i=1,M
+      call random_number(random)
+      T(i,j) = random              !Copies the first column over to all six columns
+   end do
+   end do
+   call cpu_time(toc)           !### STOP TIMING
+   print*, 'Elapsed time:', toc-tic,'s'
+else 
+! USER-DEFINED MATRIX:
    do j = 1,N
    do i = 1,M
       V(i,j) =  i**2 + 2*j
@@ -51,29 +61,43 @@ else
    T = reshape((/1, 5, 10, 2, 3, 1, 10, 5, 2, 3 /), shape(T))
 end if
 
-
-
+! PRINT V,T:
 print*,'V:'
 call printmatrix(V,size(V,dim=1))
 print*,'T:'
 call printmatrix(T,size(T,dim=1))
 
-! SVD DECOMPOSITION:
+
 if (M.gt.8.or.N.gt.8)  printval=.false. !suppress printing large matrices
-call SVD(V,T,h_ij,printval)
+
+!
+! SOLVER:
+!
+print*,'Using solution method:',solver
+select case (solver)
+case('svd')
+   call SVD(V,T,h_ij,printval)
+case('lud')
+   call LU(V,T,h_ij,lambda)
+case default
+   print*,'Select svd/lud'
+   stop
+end select
+
+print*,'V:'
+call printmatrix(V,size(V,dim=1))
+print*,'T:'
+call printmatrix(T,size(T,dim=1))
+print*,'h_ij:'
+call printmatrix(h_ij,size(h_ij,dim=1))
 
 
-! PRINT h_ij:
-   print*,'h_ij:'
-if (printval) then
-   print*, h_ij
-else
-      call printmatrix(h_ij,size(h_ij,dim=1))
-end if
 
 contains
 
-
+!****************************************************************
+!                              SVD                              !
+!****************************************************************
 
 subroutine SVD(A,T,h_ij,printval)
 
@@ -94,6 +118,7 @@ real(8),dimension(:,:),allocatable :: VT
 real(8),dimension(:,:),allocatable :: D, Vinv
 real(8),dimension(:), allocatable :: S, work
 
+real(8) :: tic,toc
 logical :: printval
 character(1) :: N_char 
 
@@ -113,10 +138,12 @@ call dgesvd('All','All', M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, info)
 LWORK = min( LWMAX, int(WORK(1)) ) 
 !$omp parallel
 !$omp critical
+call cpu_time(tic)
 call dgesvd('All','All',M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, info)
+call cpu_time(toc)
 !$omp end critical
 !$omp end parallel
-
+print*,'Elapsed time:',toc-tic
 
 ! Convergence check:
 if (info.gt.0) then
@@ -139,8 +166,11 @@ end if
 
 ! COMPUTE PSEUDOINVERSE:
 D = 0.d0
-forall(i=1:N) D(i,i) = S(i) / (S(i)**2 + lam**2)
+forall(i=1:N) D(i,i) = S(i) / (S(i)**2 + lambda**2)
+call cpu_time(tic)
 Vinv = matmul(matmul(transpose(VT),D),transpose(U))
+call cpu_time(toc)
+print*,"Elapsed time:",toc-tic
 
 if(printval) then
 print*,'D'                     ! D MATRIX - DIAG MATRIX
@@ -156,7 +186,69 @@ return
 end subroutine SVD
 
 
-! SUBROUTINE INIT_RANDOM_SEED: RANDOM NUMBER GENERATION 
+
+
+!****************************************************************
+!                                LU                             !
+!****************************************************************
+subroutine LU(V, T_ij, h_ij, lambda)
+  implicit none
+ 
+ ! dgesv destroys the original matrix. So V is copied into 'a' matrix. This is the LU product matrix.
+ ! dgesv returns x vector. First it copies the values from 'T_ij' vector and then computes 'h_ij'.
+ ! 'h_ij' is the h_ij vector.
+ 
+  ! ARGUMENTS:
+  real(8), dimension(:,:), intent(in) :: V 
+  real(8), dimension(:,:), intent(in) :: T_ij
+  real(8), dimension(:,:), intent(out) :: h_ij
+  real(8), intent(in) :: lambda
+ 
+ ! DGESV ARGUMENTS:
+  integer, parameter        :: LDA = N, LDB = N, nrhs = P
+  real(8), dimension(:,:),allocatable :: A,VT, eye ! EYE - IDENTITY MATRIX
+  real(8), dimension(:,:),allocatable :: b
+  integer, dimension(:), allocatable  :: ipiv
+  integer                   :: info
+  real(8) :: tic, toc
+  integer :: i
+ 
+  allocate (A(N,N), eye(N,N), b(N,P), ipiv(N), VT(N,M))
+  A=0.d0;eye=0.d0;b=0.d0
+
+ forall(i = 1:N) eye(i,i) = 1.d0 ! Identity matrix
+ ! Use the SAVE attribute or something to avoid repeated construction.
+
+call cpu_time(tic)
+ A = matmul(transpose(V),V) +  (lambda * eye) !Bottleneck
+call cpu_time(toc)
+print*,'Elapsed time', toc-tic
+
+
+ print*,'A:'
+ call printmatrix(A,size(A,dim=1)) 
+
+ VT = transpose(V)
+ b = matmul(VT,T_ij) 
+ print*,'b:'
+ call printmatrix(b,size(b,dim=1))
+ 
+call cpu_time(tic)
+call DGESV(N, nrhs, A, LDA, ipiv, b, LDB, info)
+call cpu_time(toc)
+print*,'Elapsed time:', toc-tic
+
+h_ij = b
+
+deallocate (A,eye,b,ipiv,VT)
+return
+end subroutine LU
+
+
+!****************************************************************
+!    SUBROUTINE INIT_RANDOM_SEED: RANDOM NUMBER GENERATION      !
+!****************************************************************
+
 subroutine init_random_seed()
 
 integer, dimension(:), allocatable :: seed
@@ -172,18 +264,27 @@ return
 end subroutine init_random_seed
 
 
-! SUBROUTINE PRINTMATRIX:
+!****************************************************************
+!                     SUBROUTINE PRINTMATRIX                    !            
+!****************************************************************
 subroutine printmatrix(A,LDA)
 implicit none
 
 ! ARGUMENTS:
 real(8), dimension(:,:) :: A
-integer :: LDA
+integer :: LDA,width
 integer :: i,j
 
-if (LDA.gt.8) LDA=8
+
+if (LDA.gt.8) then
+   LDA=8
+   width=8
+end if
+
+if (size(A,dim=2).lt.8) width = size(A,dim=2)
+
 do i=1,LDA
-   print*, A(i,1:4)
+   print*, A(i,1:width)
 end do
 
 return

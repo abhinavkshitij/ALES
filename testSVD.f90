@@ -17,9 +17,7 @@ logical :: randomV =.true.
 character(3) :: solver = 'lud' 
 
 
-
-!$ call omp_set_num_threads(8)
-
+!$ call omp_set_num_threads(2)
 
 ! ASSERT (M >= N) BEFORE ALLOCATION:
 if (M.lt.N) then
@@ -67,7 +65,6 @@ call printmatrix(V,size(V,dim=1))
 print*,'T:'
 call printmatrix(T,size(T,dim=1))
 
-
 if (M.gt.8.or.N.gt.8)  printval=.false. !suppress printing large matrices
 
 !
@@ -90,7 +87,6 @@ print*,'T:'
 call printmatrix(T,size(T,dim=1))
 print*,'h_ij:'
 call printmatrix(h_ij,size(h_ij,dim=1))
-
 
 
 contains
@@ -170,7 +166,7 @@ forall(i=1:N) D(i,i) = S(i) / (S(i)**2 + lambda**2)
 call cpu_time(tic)
 Vinv = matmul(matmul(transpose(VT),D),transpose(U))
 call cpu_time(toc)
-print*,"Elapsed time:",toc-tic
+print*,"Matmul() Elapsed time:",toc-tic
 
 if(printval) then
 print*,'D'                     ! D MATRIX - DIAG MATRIX
@@ -184,8 +180,6 @@ end if
 h_ij = matmul(Vinv,T)
 return
 end subroutine SVD
-
-
 
 
 !****************************************************************
@@ -206,41 +200,45 @@ subroutine LU(V, T_ij, h_ij, lambda)
  
  ! DGESV ARGUMENTS:
   integer, parameter        :: LDA = N, LDB = N, nrhs = P
-  real(8), dimension(:,:),allocatable :: A,VT, eye ! EYE - IDENTITY MATRIX
+  real(8), dimension(:,:),allocatable :: A,VT ! EYE - IDENTITY MATRIX
   real(8), dimension(:,:),allocatable :: b
   integer, dimension(:), allocatable  :: ipiv
   integer                   :: info
   real(8) :: tic, toc
   integer :: i
  
-  allocate (A(N,N), eye(N,N), b(N,P), ipiv(N), VT(N,M))
-  A=0.d0;eye=0.d0;b=0.d0
+  !DGEMM ARGUMENTS:
+  real(8):: alpha=1.d0, beta=0.d0
 
- forall(i = 1:N) eye(i,i) = 1.d0 ! Identity matrix
- ! Use the SAVE attribute or something to avoid repeated construction.
-
-call cpu_time(tic)
- A = matmul(transpose(V),V) +  (lambda * eye) !Bottleneck
-call cpu_time(toc)
-print*,'Elapsed time', toc-tic
-
-
- print*,'A:'
- call printmatrix(A,size(A,dim=1)) 
+ allocate (A(N,N), b(N,P), ipiv(N), VT(N,M))
 
  VT = transpose(V)
- b = matmul(VT,T_ij) 
+ call cpu_time(tic)
+ call dgemm('T','N',N,N,M,alpha,V,M,V,M,beta,A,N)
+ call cpu_time(toc)
+ print*,'Elapsed time', toc-tic
+
+forall(i=1:N) A(i,i) = A(i,i) + lambda 
+
+!A
+ print*,'A:'
+ call printmatrix(A,size(A,dim=1)) 
+!b
+! b = matmul(VT,T_ij)
+ call dgemm('T','N',N,P,M,alpha,V,M,T_ij,M,beta,b,N)
  print*,'b:'
  call printmatrix(b,size(b,dim=1))
  
 call cpu_time(tic)
+!$omp parallel 
 call DGESV(N, nrhs, A, LDA, ipiv, b, LDB, info)
+!$omp end parallel 
 call cpu_time(toc)
 print*,'Elapsed time:', toc-tic
 
 h_ij = b
 
-deallocate (A,eye,b,ipiv,VT)
+deallocate (A,b,ipiv,VT)
 return
 end subroutine LU
 
@@ -273,8 +271,7 @@ implicit none
 ! ARGUMENTS:
 real(8), dimension(:,:) :: A
 integer :: LDA,width
-integer :: i,j
-
+integer :: i
 
 if (LDA.gt.8) then
    LDA=8

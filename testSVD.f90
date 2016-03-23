@@ -3,21 +3,21 @@ program testSVD
 use omp_lib
 
 implicit none
-!integer, parameter :: M=5, N=3, P=2  ! Define array size here.
-integer,parameter :: M=17576, N=3403, P=6
+integer, parameter :: M=1757, N=340, P=2  ! Define array size here.
+!integer,parameter :: M=175, N=34, P=6
 
-real(8),allocatable,dimension(:,:):: V,T,h_ij      ! Non-linear combination matrix
+real(8),allocatable,dimension(:,:) :: V,T,h_ij      ! Non-linear combination matrix
 real(8) :: lambda = 0.1d0         ! lambda, damping factor
 real(8) :: random
 real(8) :: tic, toc
 integer :: i,j,nthread
 logical :: printval=.false.
-logical :: randomV =.true.
+logical :: randomV =.false.
 
 character(3) :: solver = 'lud' 
 
 
-!$ call omp_set_num_threads(2)
+!!$ call omp_set_num_threads(2)
 
 ! ASSERT (M >= N) BEFORE ALLOCATION:
 if (M.lt.N) then
@@ -53,10 +53,15 @@ else
 ! USER-DEFINED MATRIX:
    do j = 1,N
    do i = 1,M
-      V(i,j) =  i**2 + 2*j
+      V(i,j) =  2*i + j**2
    end do
    end do
-   T = reshape((/1, 5, 10, 2, 3, 1, 10, 5, 2, 3 /), shape(T))
+   do j = 1,P
+   do i = 1,M
+      T(i,j) = i + 3*j
+   end do
+   end do
+!   T = reshape((/1, 5, 10, 2, 3, 1, 10, 5, 2, 3 /), shape(T))
 end if
 
 ! PRINT V,T:
@@ -112,15 +117,17 @@ integer :: i,j, info, LWORK
 real(8),dimension(:,:),allocatable :: U
 real(8),dimension(:,:),allocatable :: VT 
 real(8),dimension(:,:),allocatable :: D, Vinv
-real(8),dimension(:), allocatable :: S, work
+real(8),dimension(:), allocatable :: S, work,IWORK
 
 real(8) :: tic,toc
 logical :: printval
 character(1) :: N_char 
 
 
-LWMAX = M*N
-allocate (U(LDU,M), VT(N,N), S(N), D(N,M), Vinv(N,M), work(LWMAX))
+ LWMAX = M*N
+ print*,'Allocate arrays, LWMAX=',LWMAX
+ allocate (U(LDU,M), VT(N,N), S(N), D(N,M), Vinv(N,M), work(LWMAX),IWORK(8*M))
+ print*,'Done'
 
 if (printval) then
 print*,'A'                      ! A MATRIX
@@ -128,17 +135,21 @@ call printmatrix(A,size(A,dim=1))
 end if
 
 
+
 ! CALL SVD ROUTINE:
 LWORK = -1
-call dgesvd('All','All', M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, info)
+!call dgesvd('All','All', M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, info)
+call dgesdd('A', M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, IWORK,info)
+
 LWORK = min( LWMAX, int(WORK(1)) ) 
-!$omp parallel
-!$omp critical
+!!$omp parallel
+!!$omp critical
 call cpu_time(tic)
-call dgesvd('All','All',M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, info)
+!call dgesvd('All','All',M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, info)
+call dgesdd('A', M,N, A, LDA, S, U, LDU, VT, LDVT, WORK, LWORK, IWORK,info)
 call cpu_time(toc)
-!$omp end critical
-!$omp end parallel
+!!$omp end critical
+!!$omp end parallel
 print*,'Elapsed time:',toc-tic
 
 ! Convergence check:
@@ -210,35 +221,35 @@ subroutine LU(V, T_ij, h_ij, lambda)
   !DGEMM ARGUMENTS:
   real(8):: alpha=1.d0, beta=0.d0
 
- allocate (A(N,N), b(N,P), ipiv(N), VT(N,M))
+ allocate (A(N,N), b(N,P), ipiv(N))
 
- VT = transpose(V)
+! VT = transpose(V)
  call cpu_time(tic)
- call dgemm('T','N',N,N,M,alpha,V,M,V,M,beta,A,N)
+ call dgemm('T','N',N,N,M, alpha, V,M, V,M, beta, A,N)
  call cpu_time(toc)
  print*,'Elapsed time', toc-tic
 
-forall(i=1:N) A(i,i) = A(i,i) + lambda 
 
 !A
+ forall(i=1:N) A(i,i) = A(i,i) + lambda 
  print*,'A:'
  call printmatrix(A,size(A,dim=1)) 
 !b
-! b = matmul(VT,T_ij)
- call dgemm('T','N',N,P,M,alpha,V,M,T_ij,M,beta,b,N)
+ call dgemm('T','N',N,P,M, alpha, V,M, T_ij,M, beta, b,N)
  print*,'b:'
  call printmatrix(b,size(b,dim=1))
  
 call cpu_time(tic)
 !$omp parallel 
-call DGESV(N, nrhs, A, LDA, ipiv, b, LDB, info)
+call DGESV(N, nrhs, A, LDA, ipiv, b, LDB, info) !A is a symmetric matrix
+
 !$omp end parallel 
 call cpu_time(toc)
 print*,'Elapsed time:', toc-tic
 
 h_ij = b
 
-deallocate (A,b,ipiv,VT)
+deallocate (A,b,ipiv)
 return
 end subroutine LU
 

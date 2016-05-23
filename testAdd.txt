@@ -15,4 +15,4 @@ Adding file gitadd_remote.txt on local
 add a change on master
 adding extra change here in master before file-specific merge
 More changes before file-specific merge
-
+Add-commit and reopening tab w/o exiting editor.

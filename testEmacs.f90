@@ -1,4 +1,4 @@
 program em
 
-print*
+print*,'add'
 end program em

@@ -1,4 +1,3 @@
 Begin interactive staging
 Begin testing unstage.
 What happens if I commit w/o staging changes?
-Unstaged changes are seen in the file at current HEAD, but they will be lost if one goes back to a previous HEAD where the changes were not staged. 
